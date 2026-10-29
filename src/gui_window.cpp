@@ -1,5 +1,7 @@
 #include "gui_window.h"
 
+#include <cmath>
+
 #include <QApplication>
 #include <QFileDialog>
 #include <QPaintEvent>
@@ -172,6 +174,13 @@ GuiWindow::GuiWindow(ISensorSource *source, QWidget *parent)
 
 void GuiWindow::onPose(const PoseSample &s)
 {
+    // The T265 firmware emits pose frames with NaN fields while the
+    // tracker is lost/re-locking; drop them so the trajectory, readout
+    // and CSV export stay finite.
+    if (!std::isfinite(s.x) || !std::isfinite(s.y) || !std::isfinite(s.z) ||
+        !std::isfinite(s.qx) || !std::isfinite(s.qy) || !std::isfinite(s.qz) ||
+        !std::isfinite(s.qw))
+        return;
     poseCnt_++;
     totalPose_++;
     traj_->append(s);

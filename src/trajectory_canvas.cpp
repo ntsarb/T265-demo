@@ -110,6 +110,14 @@ void TrajectoryCanvas::paintEvent(QPaintEvent *)
     const double scale =
         (std::min(width(), height()) * 0.40) / range * zoom_;
 
+    // Defensive: a non-finite scale would make every projected point NaN
+    // (Qt would warn about degenerate arcs and draw nothing).
+    if (!std::isfinite(scale)) {
+        p.drawText(rect().adjusted(0, 0, 0, -30), Qt::AlignCenter,
+                   QStringLiteral("trajectory data invalid"));
+        return;
+    }
+
     const double cyaw = std::cos(qDegreesToRadians(yawDeg_));
     const double syaw = std::sin(qDegreesToRadians(yawDeg_));
     const double cpit = std::cos(qDegreesToRadians(pitchDeg_));
