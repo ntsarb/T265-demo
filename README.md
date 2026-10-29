@@ -99,3 +99,7 @@ src/
   trajectory_canvas.*  3-D trajectory viewport
   imu_strip.*          gyro/accel strip plots
 ```
+
+## License
+
+Apache License Version 2.0, January 2004 http://www.apache.org/licenses/
