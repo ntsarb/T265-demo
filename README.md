@@ -1,5 +1,4 @@
 # T265-demo
-<img width="2356" height="2144" alt="Screenshot From 2026-10-29 21-02-51" src="https://github.com/user-attachments/assets/fdc0643c-bd02-4c7a-ad8c-dbe68cdf09bf" />
 
 A small Qt 6 viewer for the Intel RealSense T265. Shows the 6-DoF
 trajectory, both fisheye images and the gyro/accelerometer strips, with a
@@ -14,6 +13,9 @@ The camera is read either
 
 Both backends implement the same `ISensorSource` interface, so the GUI is
 identical in either mode.
+
+<img width="2356" height="2144" alt="Screenshot From 2026-10-29 21-02-51" src="https://github.com/user-attachments/assets/fdc0643c-bd02-4c7a-ad8c-dbe68cdf09bf" />
+
 
 ## Features
 
