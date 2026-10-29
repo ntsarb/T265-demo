@@ -46,17 +46,18 @@ void RosSource::start()
     if (running_)
         return;
     running_ = true;
-    auto *t = QThread::create([this] { run(); });
-    connect(t, &QThread::finished, t, &QObject::deleteLater);
-    thread_ = t;
-    t->start();
+    thread_ = QThread::create([this] { run(); });
+    thread_->start();
 }
 
 void RosSource::stop()
 {
     running_ = false;
     if (thread_) {
-        thread_->wait(5000);
+        // Wait first: the QThread must not be deleted while run() can still
+        // be inside it (same early-finish crash that hit the SDK source).
+        if (thread_->wait(5000))
+            delete thread_;
         thread_ = nullptr;
     }
 }
@@ -67,7 +68,20 @@ void RosSource::run()
         static std::once_flag init_flag;
         std::call_once(init_flag, [] { rclcpp::init(0, nullptr); });
 
-        auto node = std::make_shared<rclcpp::Node>("t265_demo");
+        // Fast DDS' shared-memory transport needs inotify watches per
+        // channel; under a tight watch budget (see fs.inotify.max_user_watches)
+        // participant creation can transiently fail, so retry before giving up.
+        std::shared_ptr<rclcpp::Node> node;
+        for (int attempt = 0; ; ++attempt) {
+            try {
+                node = std::make_shared<rclcpp::Node>("t265_demo");
+                break;
+            } catch (const std::exception &) {
+                if (attempt >= 5)
+                    throw;
+                QThread::msleep(1000);
+            }
+        }
         const std::string p = prefix_.toStdString();
         // The wrapper publishes all streams best-effort, so subscribe with
         // SensorDataQoS (a best-effort sub matches both pub types).
@@ -77,6 +91,7 @@ void RosSource::run()
         auto sub_pose = node->create_subscription<nav_msgs::msg::Odometry>(
             p + "/pose/sample", qos,
             [this](const nav_msgs::msg::Odometry::ConstSharedPtr &m) {
+                frames_++;
                 PoseSample s;
                 s.t = stampSeconds(m->header.stamp);
                 s.x = m->pose.pose.position.x;
@@ -94,8 +109,10 @@ void RosSource::run()
             t1, rclcpp::SensorDataQoS(),
             [this](const sensor_msgs::msg::Image::ConstSharedPtr &m) {
                 auto img = toImage(m);
-                if (!img.isNull())
+                if (!img.isNull()) {
+                    frames_++;
                     emit image1Ready(img);
+                }
             });
 
         const std::string t2 = p + "/fisheye2/image_rect_raw";
@@ -103,13 +120,16 @@ void RosSource::run()
             t2, rclcpp::SensorDataQoS(),
             [this](const sensor_msgs::msg::Image::ConstSharedPtr &m) {
                 auto img = toImage(m);
-                if (!img.isNull())
+                if (!img.isNull()) {
+                    frames_++;
                     emit image2Ready(img);
+                }
             });
 
         auto sub_gyro = node->create_subscription<sensor_msgs::msg::Imu>(
             p + "/gyro/sample", qos,
             [this](const sensor_msgs::msg::Imu::ConstSharedPtr &m) {
+                frames_++;
                 ImuSample s;
                 s.t = stampSeconds(m->header.stamp);
                 s.gx = m->angular_velocity.x;
@@ -121,6 +141,7 @@ void RosSource::run()
         auto sub_accel = node->create_subscription<sensor_msgs::msg::Imu>(
             p + "/accel/sample", qos,
             [this](const sensor_msgs::msg::Imu::ConstSharedPtr &m) {
+                frames_++;
                 ImuSample s;
                 s.t = stampSeconds(m->header.stamp);
                 s.ax = m->linear_acceleration.x;
@@ -129,16 +150,67 @@ void RosSource::run()
                 emit accelReady(s);
             });
 
-        emit statusChanged(
-            QStringLiteral("ROS mode: connected, waiting for %1/pose/sample ... "
-                           "(launch the wrapper node first if it is not "
-                           "running)")
-                .arg(prefix_));
-
         rclcpp::executors::SingleThreadedExecutor exec;
         exec.add_node(node);
+
+        // Poll so the footer can say whether the wrapper node is actually
+        // running, instead of just waiting silently. Receiving frames is the
+        // ground truth (graph introspection is unreliable across some DDS
+        // configurations), the graph is only consulted while nothing flows.
+        const std::string pose_topic = p + "/pose/sample";
+        auto last_check = std::chrono::steady_clock::now();
+        int last_state = -1; // -1 unknown, 0 absent, 1 node only, 2 pub, 3 data
+        auto poll = [&]() {
+            try {
+                const int state =
+                    frames_ > 0 ? 3 :
+                    node->count_publishers(pose_topic) > 0 ? 2 :
+                    [](const auto &node, const std::string &p) {
+                        try {
+                            for (const auto &full : node->get_node_names())
+                                if (full == p)
+                                    return 1;
+                        } catch (const std::exception &) {
+                        }
+                        return 0;
+                    }(node, p) ? 1 : 0;
+                if (state != last_state) {
+                    last_state = state;
+                    if (state == 3)
+                        emit statusChanged(
+                            QStringLiteral("ROS mode: wrapper running — "
+                                           "receiving data"));
+                    else if (state == 2)
+                        emit statusChanged(
+                            QStringLiteral("ROS mode: wrapper is publishing "
+                                           "%1, waiting for the first frame...")
+                                .arg(QString::fromStdString(pose_topic)));
+                    else if (state == 1)
+                        emit statusChanged(
+                            QStringLiteral("ROS mode: wrapper node found, but "
+                                           "%1 has no publisher yet")
+                                .arg(QString::fromStdString(pose_topic)));
+                    else
+                        emit statusChanged(
+                            QStringLiteral("ROS mode: wrapper not running — "
+                                           "launch it first: ros2 launch "
+                                           "realsense2_camera rs_launch.py"));
+                }
+            } catch (const std::exception &) {
+            }
+        };
+
+        emit statusChanged(
+            QStringLiteral("ROS mode: connected, checking the ROS graph for "
+                           "the wrapper node..."));
+        poll();
         while (running_) {
             exec.spin_some(std::chrono::milliseconds(5));
+            const auto now = std::chrono::steady_clock::now();
+            if (now - last_check >= std::chrono::seconds(1)) {
+                last_check = now;
+                poll();
+            }
         }
         rclcpp::shutdown();
     } catch (const std::exception &err) {

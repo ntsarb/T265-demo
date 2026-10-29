@@ -24,6 +24,7 @@ private:
     void run();
 
     std::atomic<bool> running_{false};
+    std::atomic<std::size_t> frames_{0}; // any delivered frame — liveness
     QThread *thread_ = nullptr;
     QString prefix_;
 };
