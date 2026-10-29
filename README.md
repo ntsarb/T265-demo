@@ -14,9 +14,6 @@ The camera is read either
 Both backends implement the same `ISensorSource` interface, so the GUI is
 identical in either mode.
 
-<img width="2356" height="2144" alt="Screenshot From 2026-10-29 21-02-51" src="https://github.com/user-attachments/assets/fdc0643c-bd02-4c7a-ad8c-dbe68cdf09bf" />
-
-
 ## Features
 
 * 3-D trajectory canvas (drag to rotate, wheel to zoom)
@@ -102,6 +99,11 @@ src/
   trajectory_canvas.*  3-D trajectory viewport
   imu_strip.*          gyro/accel strip plots
 ```
+
+## Related projects
+
+* [`ntsarb/librealsense-t265-v2.59.1`](https://github.com/ntsarb/librealsense-t265-v2.59.1) — restores T265 support to the librealsense v2.59.1 SDK (upstream removed it in v2.54.1).
+* [`ntsarb/realsense-ros-t265-v4.59.1`](https://github.com/ntsarb/realsense-ros-t265-v4.59.1) — restores T265 support to the `realsense2_camera` ROS 2 wrapper (4.59.1).
 
 ## License
 
