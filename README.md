@@ -1,4 +1,4 @@
-# t265-demo
+# T265-demo
 
 A small Qt 6 viewer for the Intel RealSense T265. Shows the 6-DoF
 trajectory, both fisheye images and the gyro/accelerometer strips, with a
