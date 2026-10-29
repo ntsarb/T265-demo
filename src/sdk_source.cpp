@@ -83,17 +83,19 @@ void SdkSource::start()
     if (running_)
         return;
     running_ = true;
-    auto *t = QThread::create([this] { run(); });
-    connect(t, &QThread::finished, t, &QObject::deleteLater);
-    thread_ = t;
-    t->start();
+    thread_ = QThread::create([this] { run(); });
+    thread_->start();
 }
 
 void SdkSource::stop()
 {
     running_ = false;
     if (thread_) {
-        thread_->wait(5000);
+        // Wait first: the QThread must not be deleted while run() can still
+        // be inside it. An early-finished thread (device busy) used to be
+        // deleted via deleteLater and then wait()'d on here, which crashed.
+        if (thread_->wait(5000))
+            delete thread_;
         thread_ = nullptr;
     }
 }
@@ -101,6 +103,18 @@ void SdkSource::stop()
 void SdkSource::run()
 {
     using namespace rs2;
+    // The SDK log sink is process-global, but the callback below references
+    // this object. Detach it on every exit path so it can never fire after
+    // this thread (and the object, which it outlives) is gone.
+    struct LogScope {
+        ~LogScope()
+        {
+            rs2_error *e = nullptr;
+            rs2_log_to_console(RS2_LOG_SEVERITY_ERROR, &e);
+            if (e)
+                rs2_free_error(e);
+        }
+    } logScope;
     try {
         rs2_error *e = nullptr;
         // Keep the console quiet; the GUI status bar carries the logs.
