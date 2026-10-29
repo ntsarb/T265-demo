@@ -14,6 +14,8 @@ The camera is read either
 Both backends implement the same `ISensorSource` interface, so the GUI is
 identical in either mode.
 
+<img width="2356" height="2144" alt="Screenshot From 2026-10-29 21-02-51" src="https://github.com/user-attachments/assets/0cfc8a41-bba7-44ce-8ba1-e1733eefca5b" />
+
 ## Features
 
 * 3-D trajectory canvas (drag to rotate, wheel to zoom)
